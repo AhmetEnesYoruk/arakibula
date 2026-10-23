@@ -1,3 +1,5 @@
 flask
 requests
 gunicorn
+duckduckgo_search
+googlesearch-python
