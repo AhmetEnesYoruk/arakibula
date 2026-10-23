@@ -30,7 +30,7 @@ def search():
     def search_ddg():
         ddg_list = []
         with DDGS() as ddgs:
-            for item in ddgs.text(query, max_results=10):
+            for item in ddgs.text(query, max_results=10, backend="html"):
                 ddg_list.append(
                     {
                         "title": item.get("title"),
