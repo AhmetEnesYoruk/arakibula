@@ -1,22 +1,8 @@
-import re
-import urllib.parse
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, render_template_string
 from flask_cors import CORS
-import requests
 
 app = Flask(__name__)
 CORS(app)
-
-ALLOWED_DOMAINS = {
-    "akakce": "Akakçe",
-    "cimri": "Cimri",
-    "trendyol": "Trendyol",
-    "hepsiburada": "Hepsiburada",
-    "amazon": "Amazon TR",
-    "n11": "N11",
-    "pazarama": "Pazarama",
-    "ciceksepeti": "Çiçeksepeti",
-}
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -24,7 +10,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AraKiBula - Fiyat Bulucu</title>
+    <title>AraKiBula - Akıllı Fiyat Bulucu</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -113,4 +99,156 @@ HTML_TEMPLATE = """
         .result-card p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.4; }
 
         .loading { text-align: center; color: var(--text-muted); padding: 2rem; display: none; }
-        .error-msg { text-align: center; color: #ef4444; padding: 1.5rem; background: rgba(239, 68, 68
+        .error-msg { text-align: center; color: #ef4444; padding: 1.5rem; background: rgba(239, 68, 68, 0.1); border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.2); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AraKiBula</h1>
+            <p class="subtitle">İstemci Tabanlı Akıllı Fiyat Karşılaştırma</p>
+        </header>
+
+        <div class="search-box">
+            <input type="text" id="query" placeholder="Aradığınız ürünü yazın (ör: Logitech MX Master 3S)..." onkeypress="if(event.key==='Enter') doSearch()">
+            <button onclick="doSearch()">Fiyat Bul</button>
+        </div>
+
+        <div class="loading" id="loading">Fiyatlar ve pazar yerleri taranıyor...</div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const ALLOWED_DOMAINS = {
+            "akakce.com": "Akakçe",
+            "cimri.com": "Cimri",
+            "trendyol.com": "Trendyol",
+            "hepsiburada.com": "Hepsiburada",
+            "amazon.com.tr": "Amazon TR",
+            "n11.com": "N11",
+            "pazarama.com": "Pazarama",
+            "ciceksepeti.com": "Çiçeksepeti"
+        };
+
+        function extractPrice(text) {
+            const pattern = /(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?)\s*(?:TL|TL'den|₺)/gi;
+            let matches = [];
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                try {
+                    let cleanPrice = match[1].replace(/\./g, "").replace(",", ".");
+                    let val = parseFloat(cleanPrice);
+                    if (val >= 10 && val <= 500000) {
+                        matches.push(val);
+                    }
+                } catch(e) {}
+            }
+            return matches.length > 0 ? Math.min(...matches) : 0;
+        }
+
+        function identifyStore(link) {
+            const lowerLink = link.toLowerCase();
+            for (const [domain, name] of Object.entries(ALLOWED_DOMAINS)) {
+                if (lowerLink.includes(domain)) return name;
+            }
+            return null;
+        }
+
+        async function doSearch() {
+            const q = document.getElementById('query').value.trim();
+            const resultsDiv = document.getElementById('results');
+            const loading = document.getElementById('loading');
+
+            if (!q) return;
+
+            resultsDiv.innerHTML = '';
+            loading.style.display = 'block';
+
+            try {
+                const targetQuery = encodeURIComponent(`${q} (site:akakce.com OR site:cimri.com OR site:trendyol.com OR site:hepsiburada.com OR site:amazon.com.tr OR site:n11.com)`);
+                const corsProxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent('https://html.duckduckgo.com/html/?q=' + targetQuery)}`;
+
+                const res = await fetch(corsProxyUrl);
+                const data = await res.json();
+                loading.style.display = 'none';
+
+                if (!data.contents) {
+                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Arama sonucu alınamadı.</p>';
+                    return;
+                }
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(data.contents, 'text/html');
+                const links = doc.querySelectorAll('.result__body');
+
+                let results = [];
+
+                links.forEach(el => {
+                    const titleEl = el.querySelector('.result__title a');
+                    const snippetEl = el.querySelector('.result__snippet');
+
+                    if (titleEl) {
+                        let link = titleEl.getAttribute('href') || '';
+                        
+                        // DuckDuckGo yönlendirme URL'sini temizle
+                        if (link.includes('uddg=')) {
+                            const urlParams = new URLSearchParams(link.split('?')[1]);
+                            link = urlParams.get('uddg') || link;
+                        }
+
+                        const title = titleEl.innerText.trim();
+                        const snippet = snippetEl ? snippetEl.innerText.trim() : '';
+
+                        const storeName = identifyStore(link);
+                        if (storeName) {
+                            const price = extractPrice(`${title} ${snippet}`);
+                            if (!results.some(r => r.link === link)) {
+                                results.push({ title, link, snippet, price, storeName });
+                            }
+                        }
+                    }
+                });
+
+                results.sort((a, b) => {
+                    if (a.price === 0) return 1;
+                    if (b.price === 0) return -1;
+                    return a.price - b.price;
+                });
+
+                if (results.length > 0) {
+                    results.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'result-card';
+
+                        let priceHtml = item.price > 0 
+                            ? `<div class="price-tag">${item.price.toLocaleString('tr-TR')} TL'den başlayan fiyatlar</div>`
+                            : `<div class="price-tag" style="color: var(--text-muted); font-size:1rem;">Fiyat Detayları İçin Tıklayın</div>`;
+
+                        card.innerHTML = `
+                            <span class="source-badge">${item.storeName}</span>
+                            ${priceHtml}
+                            <a href="${item.link}" target="_blank">${item.title}</a>
+                            <p>${item.snippet || 'Açıklama bulunmuyor.'}</p>
+                        `;
+                        resultsDiv.appendChild(card);
+                    });
+                } else {
+                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Pazar yerlerinde bu ürün için doğrudan sonuç bulunamadı.</p>';
+                }
+
+            } catch (err) {
+                loading.style.display = 'none';
+                resultsDiv.innerHTML = `<div class="error-msg">Arama sırasında bir hata oluştu: ${err.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET"])
+def home():
+    return render_template_string(HTML_TEMPLATE)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
