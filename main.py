@@ -115,7 +115,7 @@ HTML_TEMPLATE = """
             <button onclick="doSearch()">Fiyat Bul</button>
         </div>
 
-        <div class="loading" id="loading">Sadece Akakçe ve Cimri sonuçları süzülüyor...</div>
+        <div class="loading" id="loading">Fiyat ve pazar yeri sonuçları taranıyor...</div>
         <div class="results" id="results"></div>
     </div>
 
@@ -153,7 +153,7 @@ HTML_TEMPLATE = """
                         resultsDiv.appendChild(card);
                     });
                 } else {
-                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Akakçe veya Cimri üzerinde bu ürünle tam eşleşen bir sayfa bulunamadı.</p>';
+                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Bu ürüne ait karşılaştırma veya pazar yeri sonucu bulunamadı.</p>';
                 }
             } catch (err) {
                 loading.style.display = 'none';
@@ -196,29 +196,25 @@ def search():
         return jsonify({"error": "Sorgu eksik"}), 400
 
     results = []
-    
-    # Akakçe ve Cimri için ayrı sorgular çalıştırıyoruz
-    search_queries = [
-        (f"{query} akakce", "Akakçe", "akakce.com"),
-        (f"{query} cimri", "Cimri", "cimri.com")
-    ]
 
     try:
         with DDGS() as ddgs:
+            # 1. Aşama: Doğrudan Akakçe ve Cimri Araması
+            search_queries = [
+                (f"{query} site:akakce.com", "Akakçe", "akakce.com"),
+                (f"{query} site:cimri.com", "Cimri", "cimri.com"),
+            ]
+
             for s_query, s_name, domain in search_queries:
-                raw_results = ddgs.text(s_query, max_results=8, backend="html")
-                
+                raw_results = ddgs.text(s_query, max_results=6)
                 for item in raw_results:
                     link = item.get("href", "")
                     title = item.get("title", "")
                     snippet = item.get("body", "")
 
-                    # YALNIZCA domain adresi akakce.com veya cimri.com olan bağlantıları al!
-                    if domain in link:
+                    if domain in link or domain in title.lower():
                         price = extract_price(f"{title} {snippet}")
-                        
-                        # Tekrar eden bağlantıları engelle
-                        if not any(r['link'] == link for r in results):
+                        if not any(r["link"] == link for r in results):
                             results.append(
                                 {
                                     "title": title,
@@ -229,7 +225,41 @@ def search():
                                 }
                             )
 
-        # Fiyatı çekilebilenleri en ucuzdan pahalıya sırala
+            # 2. Aşama (Fallback): Eğer Akakçe/Cimri engellendiyse pazar yerlerine bak
+            if not results:
+                fallback_query = f"{query} fiyatı satın al"
+                raw_fallback = ddgs.text(fallback_query, max_results=10)
+                for item in raw_fallback:
+                    link = item.get("href", "")
+                    title = item.get("title", "")
+                    snippet = item.get("body", "")
+                    price = extract_price(f"{title} {snippet}")
+
+                    site_name = "Pazar Yeri"
+                    if "trendyol" in link:
+                        site_name = "Trendyol"
+                    elif "hepsiburada" in link:
+                        site_name = "Hepsiburada"
+                    elif "amazon" in link:
+                        site_name = "Amazon TR"
+                    elif "n11" in link:
+                        site_name = "N11"
+                    elif "akakce" in link:
+                        site_name = "Akakçe"
+                    elif "cimri" in link:
+                        site_name = "Cimri"
+
+                    results.append(
+                        {
+                            "title": title,
+                            "link": link,
+                            "snippet": snippet,
+                            "price": price,
+                            "source_site": site_name,
+                        }
+                    )
+
+        # Fiyatı bulunanları en ucuzdan pahalıya sırala
         results.sort(
             key=lambda x: x["price"] if x["price"] > 0 else float("inf")
         )
