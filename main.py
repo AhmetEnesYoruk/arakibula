@@ -189,7 +189,9 @@ def search():
     def search_ddg():
         ddg_list = []
         with DDGS() as ddgs:
-            for item in ddgs.text(query, max_results=10, backend="html"):
+            # Önce varsayılan arama denenir, backend zorlaması olmadan
+            results = ddgs.text(query, max_results=10)
+            for item in results:
                 ddg_list.append(
                     {
                         "title": item.get("title"),
