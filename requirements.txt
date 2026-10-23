@@ -3,3 +3,4 @@ requests
 gunicorn
 duckduckgo_search
 googlesearch-python
+flask-cors
