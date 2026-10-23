@@ -1,12 +1,12 @@
 import re
-from duckduckgo_search import DDGS
+import requests
 from flask import Flask, jsonify, render_template_string, request
 from flask_cors import CORS
+from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 CORS(app)
 
-# Sadece bu pazar yerleri/karşılaştırma siteleri kabul edilecek
 ALLOWED_DOMAINS = {
     "akakce": "Akakçe",
     "cimri": "Cimri",
@@ -108,98 +108,4 @@ HTML_TEMPLATE = """
             margin-bottom: 8px;
         }
 
-        .result-card a { color: #f8fafc; text-decoration: none; font-size: 1.1rem; font-weight: 600; display: block; margin-bottom: 0.4rem; }
-        .result-card a:hover { color: var(--accent); }
-        .result-card p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.4; }
-
-        .loading { text-align: center; color: var(--text-muted); padding: 2rem; display: none; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>AraKiBula</h1>
-            <p class="subtitle">E-Ticaret ve Fiyat Karşılaştırma Arama Motoru</p>
-        </header>
-
-        <div class="search-box">
-            <input type="text" id="query" placeholder="Aradığınız ürünü yazın (ör: Logitech MX Master 3S)..." onkeypress="if(event.key==='Enter') doSearch()">
-            <button onclick="doSearch()">Fiyat Bul</button>
-        </div>
-
-        <div class="loading" id="loading">Fiyatlar ve pazar yerleri taranıyor...</div>
-        <div class="results" id="results"></div>
-    </div>
-
-    <script>
-        async function doSearch() {
-            const q = document.getElementById('query').value.trim();
-            const resultsDiv = document.getElementById('results');
-            const loading = document.getElementById('loading');
-
-            if (!q) return;
-
-            resultsDiv.innerHTML = '';
-            loading.style.display = 'block';
-
-            try {
-                const res = await fetch(`/search?q=${encodeURIComponent(q)}`);
-                const data = await res.json();
-                loading.style.display = 'none';
-
-                if (data.results && data.results.length > 0) {
-                    data.results.forEach((item) => {
-                        const card = document.createElement('div');
-                        card.className = 'result-card';
-                        
-                        let priceHtml = item.price > 0 
-                            ? `<div class="price-tag">${item.price.toLocaleString('tr-TR')} TL'den başlayan fiyatlar</div>`
-                            : `<div class="price-tag" style="color: var(--text-muted); font-size:1rem;">Fiyat Detayları İçin Tıklayın</div>`;
-
-                        card.innerHTML = `
-                            <span class="source-badge">${item.source_site}</span>
-                            ${priceHtml}
-                            <a href="${item.link}" target="_blank">${item.title}</a>
-                            <p>${item.snippet || 'Ürün detayı bulunmuyor.'}</p>
-                        `;
-                        resultsDiv.appendChild(card);
-                    });
-                } else {
-                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Pazar yerlerinde veya karşılaştırma sitelerinde uygun sonuç bulunamadı.</p>';
-                }
-            } catch (err) {
-                loading.style.display = 'none';
-                resultsDiv.innerHTML = '<p style="text-align:center; color: #ef4444;">Fiyatlar taranırken bir hata oluştu.</p>';
-            }
-        }
-    </script>
-</body>
-</html>
-"""
-
-
-def extract_price(text):
-    """Metindeki TL / ₺ fiyatlarını bulur."""
-    pattern = r"(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?)\s*(?:TL|TL'den|₺)"
-    matches = re.findall(pattern, text)
-
-    prices = []
-    for match in matches:
-        try:
-            clean_price = match.replace(".", "").replace(",", ".")
-            val = float(clean_price)
-            if 10 <= val <= 500000:
-                prices.append(val)
-        except ValueError:
-            continue
-
-    return min(prices) if prices else 0
-
-
-def identify_store(link):
-    """Link içerisinden hangi e-ticaret/karşılaştırma sitesi olduğunu tespit eder."""
-    link_lower = link.lower()
-    for domain, name in ALLOWED_DOMAINS.items():
-        if domain in link_lower:
-            return name
-    return None
+        .result-
