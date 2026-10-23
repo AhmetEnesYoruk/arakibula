@@ -6,13 +6,25 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# Sadece bu pazar yerleri/karşılaştırma siteleri kabul edilecek
+ALLOWED_DOMAINS = {
+    "akakce": "Akakçe",
+    "cimri": "Cimri",
+    "trendyol": "Trendyol",
+    "hepsiburada": "Hepsiburada",
+    "amazon": "Amazon TR",
+    "n11": "N11",
+    "pazarama": "Pazarama",
+    "ciceksepeti": "Çiçeksepeti",
+}
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AraKiBula - Akakçe & Cimri Fiyat Bulucu</title>
+    <title>AraKiBula - Fiyat Bulucu</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -107,7 +119,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <header>
             <h1>AraKiBula</h1>
-            <p class="subtitle">Akakçe & Cimri Doğrudan Fiyat Bulucu</p>
+            <p class="subtitle">E-Ticaret ve Fiyat Karşılaştırma Arama Motoru</p>
         </header>
 
         <div class="search-box">
@@ -115,7 +127,7 @@ HTML_TEMPLATE = """
             <button onclick="doSearch()">Fiyat Bul</button>
         </div>
 
-        <div class="loading" id="loading">Fiyat ve pazar yeri sonuçları taranıyor...</div>
+        <div class="loading" id="loading">Fiyatlar ve pazar yerleri taranıyor...</div>
         <div class="results" id="results"></div>
     </div>
 
@@ -153,7 +165,7 @@ HTML_TEMPLATE = """
                         resultsDiv.appendChild(card);
                     });
                 } else {
-                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Bu ürüne ait karşılaştırma veya pazar yeri sonucu bulunamadı.</p>';
+                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">Pazar yerlerinde veya karşılaştırma sitelerinde uygun sonuç bulunamadı.</p>';
                 }
             } catch (err) {
                 loading.style.display = 'none';
@@ -184,93 +196,10 @@ def extract_price(text):
     return min(prices) if prices else 0
 
 
-@app.route("/", methods=["GET"])
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-
-@app.route("/search", methods=["GET"])
-def search():
-    query = request.args.get("q")
-    if not query:
-        return jsonify({"error": "Sorgu eksik"}), 400
-
-    results = []
-
-    try:
-        with DDGS() as ddgs:
-            # 1. Aşama: Doğrudan Akakçe ve Cimri Araması
-            search_queries = [
-                (f"{query} site:akakce.com", "Akakçe", "akakce.com"),
-                (f"{query} site:cimri.com", "Cimri", "cimri.com"),
-            ]
-
-            for s_query, s_name, domain in search_queries:
-                raw_results = ddgs.text(s_query, max_results=6)
-                for item in raw_results:
-                    link = item.get("href", "")
-                    title = item.get("title", "")
-                    snippet = item.get("body", "")
-
-                    if domain in link or domain in title.lower():
-                        price = extract_price(f"{title} {snippet}")
-                        if not any(r["link"] == link for r in results):
-                            results.append(
-                                {
-                                    "title": title,
-                                    "link": link,
-                                    "snippet": snippet,
-                                    "price": price,
-                                    "source_site": s_name,
-                                }
-                            )
-
-            # 2. Aşama (Fallback): Eğer Akakçe/Cimri engellendiyse pazar yerlerine bak
-            if not results:
-                fallback_query = f"{query} fiyatı satın al"
-                raw_fallback = ddgs.text(fallback_query, max_results=10)
-                for item in raw_fallback:
-                    link = item.get("href", "")
-                    title = item.get("title", "")
-                    snippet = item.get("body", "")
-                    price = extract_price(f"{title} {snippet}")
-
-                    site_name = "Pazar Yeri"
-                    if "trendyol" in link:
-                        site_name = "Trendyol"
-                    elif "hepsiburada" in link:
-                        site_name = "Hepsiburada"
-                    elif "amazon" in link:
-                        site_name = "Amazon TR"
-                    elif "n11" in link:
-                        site_name = "N11"
-                    elif "akakce" in link:
-                        site_name = "Akakçe"
-                    elif "cimri" in link:
-                        site_name = "Cimri"
-
-                    results.append(
-                        {
-                            "title": title,
-                            "link": link,
-                            "snippet": snippet,
-                            "price": price,
-                            "source_site": site_name,
-                        }
-                    )
-
-        # Fiyatı bulunanları en ucuzdan pahalıya sırala
-        results.sort(
-            key=lambda x: x["price"] if x["price"] > 0 else float("inf")
-        )
-
-    except Exception as e:
-        return jsonify({"error": "Arama hatası", "details": str(e)}), 500
-
-    return jsonify(
-        {"status": "success", "count": len(results), "results": results}
-    )
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+def identify_store(link):
+    """Link içerisinden hangi e-ticaret/karşılaştırma sitesi olduğunu tespit eder."""
+    link_lower = link.lower()
+    for domain, name in ALLOWED_DOMAINS.items():
+        if domain in link_lower:
+            return name
+    return None
