@@ -1,8 +1,8 @@
 import re
-import requests
+import urllib.parse
 from flask import Flask, jsonify, render_template_string, request
 from flask_cors import CORS
-from duckduckgo_search import DDGS
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -108,4 +108,9 @@ HTML_TEMPLATE = """
             margin-bottom: 8px;
         }
 
-        .result-
+        .result-card a { color: #f8fafc; text-decoration: none; font-size: 1.1rem; font-weight: 600; display: block; margin-bottom: 0.4rem; }
+        .result-card a:hover { color: var(--accent); }
+        .result-card p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.4; }
+
+        .loading { text-align: center; color: var(--text-muted); padding: 2rem; display: none; }
+        .error-msg { text-align: center; color: #ef4444; padding: 1.5rem; background: rgba(239, 68, 68
